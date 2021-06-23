@@ -49,7 +49,7 @@ class Lane:
 
         sizeY, sizeX = img.shape
 
-        outputImg = np.dstack((img, img, img))
+        outputImg = np.dstack((img, img, img)) * 255
 
         # Compute histogram for the bottom half of the image along the x-axis
         hist = np.sum(img[sizeY//2:,:], axis=0)
@@ -58,9 +58,9 @@ class Lane:
         window_height = np.int(sizeY // self.nwindows)
 
         # Check indexes != 0
-        nonzeroInx = np.nonzero(img)
-        nonzeroInxY = np.array(nonzeroInx[0])
-        nonzeroInxX = np.array(nonzeroInx[1])
+        nonzero = np.nonzero(img)
+        nonzeroInY = np.array(nonzero[0])
+        nonzeroInX = np.array(nonzero[1])
 
         # Split the image in two and set the centers
         leftXCenter = np.argmax(hist[:sizeX // 2])
@@ -95,17 +95,17 @@ class Lane:
             # Check if pixels's values != 0 are inside the window (rectanle)
 
             # Check if the indexes are in the boxes and their values != 0
-            leftSidePixelsInsideBox = ((nonzeroInxX >= xLowLeft) & (nonzeroInxX <= xHighLeft) & (nonzeroInxY >= yLow) & (nonzeroInxY <= yHigh)).nonzero()[0]
-            rightSidePixelsInsideBox = ((nonzeroInxX >= xLowRight) & (nonzeroInxX <=xHighRight) & (nonzeroInxY >= yLow) & (nonzeroInxY <= yHigh)).nonzero()[0]
+            leftSidePixelsInsideBox = ((nonzeroInX >= xLowLeft) & (nonzeroInX <= xHighLeft) & (nonzeroInY >= yLow) & (nonzeroInY <= yHigh)).nonzero()[0]
+            rightSidePixelsInsideBox = ((nonzeroInX >= xLowRight) & (nonzeroInX <=xHighRight) & (nonzeroInY >= yLow) & (nonzeroInY <= yHigh)).nonzero()[0]
 
             leftSidePixels.append(leftSidePixelsInsideBox)
             rightSidePixels.append(rightSidePixelsInsideBox)
 
             if len(leftSidePixelsInsideBox) > self.minpixels:
-                leftXCurrent = np.int(np.mean(nonzeroInxX[leftSidePixelsInsideBox]))
+                leftXCurrent = np.int(np.mean(nonzeroInX[leftSidePixelsInsideBox]))
 
             if len(rightSidePixelsInsideBox) > self.minpixels:
-                rightXCurrent = np.int(np.mean(nonzeroInxX[rightSidePixelsInsideBox]))
+                rightXCurrent = np.int(np.mean(nonzeroInX[rightSidePixelsInsideBox]))
 
         try:
             leftSidePixels = np.concatenate(leftSidePixels)
@@ -114,24 +114,18 @@ class Lane:
             # Avoids an error if the above is not implemented fully
             pass
 
-        leftLaneY = nonzeroInxY[leftSidePixels]
-        leftLaneX = nonzeroInxX[leftSidePixels]
-        rightLaneY = nonzeroInxY[rightSidePixels]
-        rightLaneX = nonzeroInxX[rightSidePixels]
-
-        return leftLaneY, leftLaneX, rightLaneY, rightLaneX, outputImg
-    
-    def fitPolynomial(self, leftLaneY, leftLaneX, rightLaneY, rightLaneX, warpedImg):
-        
-        outputImg = np.dstack((warpedImg, warpedImg, warpedImg)) * 255
+        leftLaneY = nonzeroInY[leftSidePixels]
+        leftLaneX = nonzeroInX[leftSidePixels]
+        rightLaneY = nonzeroInY[rightSidePixels]
+        rightLaneX = nonzeroInX[rightSidePixels]
 
         # Get the coefficients (A, B, C)
         leftFit = np.polyfit(leftLaneX, leftLaneY, 2)
         rightFit = np.polyfit(rightLaneX, rightLaneY, 2)
-
+        
         # Generate x values. These will be the y for plotting
         ploty = np.linspace(0, outputImg.shape[0]-1, outputImg.shape[0])
-
+        
         try:
             leftFitX = ploty*leftFit[0]**2 + ploty*leftFit[1] + leftFit[2]
             rightFitX = ploty*rightFit[0]**2 + ploty*rightFit[1] + leftFit[2]
@@ -141,12 +135,62 @@ class Lane:
             leftFitX = ploty*leftFit[0]**2 + ploty*leftFit[1]
             rightFitX = ploty*rightFit[0]**2 + ploty*rightFit[1]
 
+        windowImg = np.zeros_like(outputImg)
+
+        outputImg[leftLaneY, leftLaneX] = [255, 0, 0]
+        outputImg[rightLaneY, rightLaneX] = [0, 0, 255]
+
+        leftLineWindow1 = np.array([np.transpose(np.vstack([leftFitX - self.margin, ploty]))])
+        leftLineWindow2 = np.array([np.flipud(np.transpose(np.vstack([leftFitX + self.margin, ploty])))])
+        leftLinePts = np.hstack((leftLineWindow1, leftLineWindow2))
+    
+        rightLineWindow1 = np.array([np.transpose(np.vstack([rightFitX - self.margin, ploty]))])
+        rightLineWindow2 = np.array([np.flipud(np.transpose(np.vstack([rightFitX + self.margin, ploty])))])
+        rightLinePts = np.hstack((rightLineWindow1, rightLineWindow2))
+
+        cv2.fillPoly(windowImg, np.int_([leftLinePts]), (0, 255, 0))
+        cv2.fillPoly(windowImg, np.int_([rightLinePts]), (0, 255, 0))
+        result = cv2.addWeighted(outputImg, 1, windowImg, 0.3, 0)
+
+        plt.plot(leftFitX, ploty, color = 'yellow')
+        plt.plot(rightFitX, ploty, color = 'yellow')
+
+        # leftFitX -> Formula for the left lane
+        # rightFitX -> Formula for the right lane
+        # leftLaneX -> X - index inside the left window and their values != 0
+        # rightLaneX -> X - index inside the right window and their values != 0
+        return leftFitX, leftLaneX, rightFitX, rightLaneX, result
+    
+    def fitPolynomial(self):
+        
         # VISUALIZATION #
 
         # outputImg[leftLaneY, leftLaneX] = [255, 0, 0]
         # outputImg[rightLaneY, rightLaneX] = [0, 0, 255]
+        pass
 
-        return outputImg
+    def drawLaneLine(self, originalImage, warpedImage, Minv, leftFitX, rightFitX):
+
+        ploty = np.linspace(0, originalImage.shape[0] - 1, originalImage.shape[0])
+        
+        warpZero = np.zeros_like(warpedImage).astype(np.uint8)
+        colorWarp = np.dstack((warpZero, warpZero, warpZero))
+
+        ptsLeft = np.array([np.transpose(np.vstack([leftFitX, ploty]))])
+        ptsRight = np.array([np.flipud(np.transpose(np.vstack([rightFitX, ploty])))])
+
+        pts = np.hstack((ptsLeft, ptsRight))
+
+        meanX = np.mean((leftFitX, rightFitX), axis = 0)
+        ptsMean = np.array([np.flipud(np.transpose(np.vstack([meanX, ploty])))])
+
+        cv2.fillPoly(colorWarp, np.int_([pts]), (0, 255, 0))
+        cv2.fillPoly(colorWarp, np.int_([ptsMean]), (0, 255, 255))
+
+        newWarp = cv2.warpPerspective(colorWarp, Minv, (originalImage.shape[1], originalImage.shape[0]))
+        result = cv2.addWeighted(originalImage, 1, newWarp, 0.3, 0)
+
+        return ptsMean, result
 
     def checkStop(self):
         
@@ -179,18 +223,20 @@ class Lane:
             src = np.float32([[200, sizeY], [575, 450], [775, 450], [1100, sizeY]])
             dst = np.float32([[200, sizeY], [200, 0], [750, 0], [750, sizeY]])
 
+            minv = cv2.getPerspectiveTransform(dst, src)
+
             warp = self.warpFrame(hlsResult, src, dst)
 
             grayWarp = self.convertToGray(warp)
 
-            leftLaneY, leftLaneX, rightLaneY, rightLaneX, warpedImg = self.slidingWindow(grayWarp)
+            leftFitX, leftLaneX, rightFitX, rightLaneX, result = self.slidingWindow(grayWarp)
 
-            res = self.fitPolynomial(leftLaneY, leftLaneX, rightLaneY, rightLaneX, warpedImg)
+            ptsMean, result = self.drawLaneLine(frame, grayWarp, minv, leftFitX, rightFitX)
 
-            cv2.imshow('Frame', res)
+            cv2.imshow('Frame', result)
         
         cv2.destroyAllWindows()
         self.cap.release()
 
-left_lane = Lane(videoPath = './videos/project_video.mp4', side = 'left', threshMin = 170, threshMax = 255, nwindows = 15)
+left_lane = Lane(videoPath = './videos/project_video.mp4', side = 'left', threshMin = 170, threshMax = 255, nwindows = 9)
 left_lane.detectLane()
